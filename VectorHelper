@@ -1,0 +1,140 @@
+package com.aesean.utils;
+
+import android.graphics.drawable.AnimatedVectorDrawable;
+import android.text.TextUtils;
+
+import android.util.Log;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * VectorHelper
+ *
+ * @author xl
+ * @version V1.0
+ * @since 16/7/8
+ */
+public class VectorHelper {
+
+    private static final String TAG = "VectorHelper";
+
+    private static final List<String> NEED_CAST_TO_INT = new ArrayList<>();
+
+    static {
+        NEED_CAST_TO_INT.add("mStrokeColor");
+        NEED_CAST_TO_INT.add("mFillColor");
+        NEED_CAST_TO_INT.add("mFillRule");
+    }
+
+    public static final String PROPERTY_NAME_STROKE_COLOR_INT = "mStrokeColor";
+    public static final String PROPERTY_NAME_STROKE_WIDTH_FLOAT = "mStrokeWidth";
+    public static final String PROPERTY_NAME_FILL_COLOR_INT = "mFillColor";
+    public static final String PROPERTY_NAME_STROKE_ALPHA_FLOAT = "mStrokeAlpha";
+    public static final String PROPERTY_NAME_FILL_RULE_INT = "mFillRule";
+    public static final String PROPERTY_NAME_FILL_ALPHA_FLOAT = "mFillAlpha";
+    public static final String PROPERTY_NAME_TRIM_PATH_START_FLOAT = "mTrimPathStart";
+    public static final String PROPERTY_NAME_TRIM_PATH_END_FLOAT = "mTrimPathEnd";
+    public static final String PROPERTY_NAME_TRIM_PATH_OFFSET_FLOAT = "mTrimPathOffset";
+    public static final String PROPERTY_NAME_STROKE_MITER_LIMIT_FLOAT = "mStrokeMiterlimit";
+
+    private static boolean isAvailablePropertyName(String propertyName) {
+        return !TextUtils.isEmpty(propertyName)
+                && (propertyName.equals(PROPERTY_NAME_STROKE_COLOR_INT)
+                || propertyName.equals(PROPERTY_NAME_STROKE_WIDTH_FLOAT)
+                || propertyName.equals(PROPERTY_NAME_FILL_COLOR_INT)
+                || propertyName.equals(PROPERTY_NAME_STROKE_ALPHA_FLOAT)
+                || propertyName.equals(PROPERTY_NAME_FILL_RULE_INT)
+                || propertyName.equals(PROPERTY_NAME_FILL_ALPHA_FLOAT)
+                || propertyName.equals(PROPERTY_NAME_TRIM_PATH_START_FLOAT)
+                || propertyName.equals(PROPERTY_NAME_TRIM_PATH_END_FLOAT)
+                || propertyName.equals(PROPERTY_NAME_TRIM_PATH_OFFSET_FLOAT)
+                || propertyName.equals(PROPERTY_NAME_STROKE_MITER_LIMIT_FLOAT));
+    }
+
+    /**
+     * 通过反射设置AnimatedVectorDrawable的各个属性
+     *
+     * @param animatedVectorDrawable AnimatedVectorDrawable对象
+     * @param groupName              要设置的组名称
+     * @param propertyName           需要设置的属性名称,属性名称参考当前类PROPERTY_NAME开头的静态String
+     * @param value                  需要设置的数值
+     * @return true设置成功, false设置失败
+     */
+    public static boolean reflect(AnimatedVectorDrawable animatedVectorDrawable, String groupName, String propertyName, float value) {
+        if (!isAvailablePropertyName(propertyName)) {
+            throw new RuntimeException("不支持的属性名:" + propertyName);
+        }
+
+        try {
+            Class<? extends AnimatedVectorDrawable> animatedVectorDrawableClass = animatedVectorDrawable.getClass();
+            Field mAnimatedVectorStateField = animatedVectorDrawableClass.getDeclaredField("mAnimatedVectorState");
+            mAnimatedVectorStateField.setAccessible(true);
+            Object mAnimatedVectorState = mAnimatedVectorStateField.get(animatedVectorDrawable);
+
+            if (mAnimatedVectorState == null) {
+                return false;
+            }
+            Class<?> mAnimatedVectorStateClass = mAnimatedVectorState.getClass();
+            Field mVectorDrawableField = mAnimatedVectorStateClass.getDeclaredField("mVectorDrawable");
+            mVectorDrawableField.setAccessible(true);
+            Object mVectorDrawable = mVectorDrawableField.get(mAnimatedVectorState);
+
+            if (mVectorDrawable == null) {
+                return false;
+            }
+            Class<?> mVectorDrawableClass = mVectorDrawable.getClass();
+            Method getTargetByNameMethod = mVectorDrawableClass.getDeclaredMethod("getTargetByName", String.class);
+            getTargetByNameMethod.setAccessible(true);
+            Object propertyTarget = getTargetByNameMethod.invoke(mVectorDrawable, groupName);
+
+            if (propertyTarget == null) {
+                return false;
+            }
+            Class<?> propertyTargetClass = propertyTarget.getClass();
+            Field mChildrenField = propertyTargetClass.getDeclaredField("mChildren");
+            mChildrenField.setAccessible(true);
+            Object mChildren = mChildrenField.get(propertyTarget);
+            if (mChildren == null) {
+                return false;
+            }
+            // 这里从源码可以查到就是List,这里也可以直接强转为List
+            if (mChildren instanceof List) {
+                List list = (List) mChildren;
+                boolean needCastToInt = needCastToInt(propertyName);
+                for (Object child : list) {
+                    Class<?> childClass = child.getClass();
+                    Field mFillColorField = childClass.getDeclaredField(propertyName);
+                    mFillColorField.setAccessible(true);
+                    if (needCastToInt) {
+                        mFillColorField.set(child, (int) value);
+                    } else {
+                        mFillColorField.set(child, value);
+                    }
+                }
+                animatedVectorDrawable.invalidateSelf();
+                return true;
+            }
+        } catch (NoSuchFieldException e) {
+            e.printStackTrace();
+            Log.e(TAG, "NoSuchFieldException: ", e);
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+            Log.e(TAG, "IllegalAccessException: ", e);
+        } catch (NoSuchMethodException e) {
+            e.printStackTrace();
+            Log.e(TAG, "NoSuchMethodException: ", e);
+        } catch (InvocationTargetException e) {
+            e.printStackTrace();
+            Log.e(TAG, "InvocationTargetException: ", e);
+        }
+        return false;
+    }
+
+    private static boolean needCastToInt(String propertyName) {
+        return NEED_CAST_TO_INT.contains(propertyName);
+    }
+}
